@@ -1,0 +1,840 @@
+---
+title: "HarvardX PH125.9x - Data Science: Capstone"
+output: 
+  html_notebook:
+    df_print: paged
+    number_section: yes
+    toc : yes
+    toc_depth : 4
+  bibliography: references.bib
+---
+
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra) # for nice tables
+library(stringr)
+library(gridExtra)
+library(ggcorrplot) # to plot correlation matrix
+library(visdat) # Visual identification of NA's
+library(gmodels) # For cross tables
+library(rsample) # For data splitting
+library (vip)# variable importance
+library(ipred) # bagged modes
+library(caret)# modelling
+library(rpart) # For decision tree
+library(rpart.plot) # to plot decision trees
+library(randomForest)
+library(ranger) # For random forests
+library(bibtex)
+
+```
+
+# Document Governance {-}
+- Title: **Wine quality**
+- Code :**Not Applicable** 
+- Type : Capstone project
+- Date of issue :12/05/2021
+- Revision number : 00
+- Status : <span style="color: red;">Released</span>
+
+
+## Document creation and review {-}
+
+Name | Contact |Participation|Date
+:---|:---|:---|:---
+Helio Guedes De Brito Neto|<guedeshelio@hotmail.com>|Author| 12/05/2021
+
+
+## Abbreviations & Acronyms {-}
+
+Abbreviation | Meaning
+:---|:---
+cp | Complexity parameter
+EDA | Exploratory Data Analysis
+FN | False Negative
+FP | False positive
+OOB| Out of bag re-sampling
+Knn | K nearest neighbor
+KPI | Key Performance Indicator
+RMSE | Root Mean Square Error
+TN | True Negative
+TP | True Positive
+
+# Executive Summary {-}
+
+The document was built in R studio environment and originally saved as a R notebook.
+
+A data set from UCI machine learned database repository was chosen following the requested criteria set by the course organizers.
+
+Data intake and first transformation were done in dedicated script and results loaded into this notebook
+
+The objective of this project was to create a prediction model for wine quality, based on the phisycochemical properties.
+
+Due to the nature of the response, classification models were selected, processed and fine tuned in a training data set and validated in a testing data set. The validation results compared to define the best model.
+
+The random forest model, with a minimum of fine tuning presented the best result in terms of overall accuracy (around 70%) and Kappa index (around 50%), making an improvement of 25% in performance when compared to the baseline. Despite of the satisfactory results the models was not able to correct classify extremes, due to the unbalanced data base.
+
+The top 5 predictors for the the wine quality were in line with the EDA
+
+1) Alcohol
+2) Density
+3) Volatile acidity
+4) Total sulfur
+5) Chlorides
+
+# Introduction 
+This document is the final deliverable for HarvardX - Introduction to Data Science course.
+The objective of the report is to demonstrate how the fundamentals of Data Science are applied in real cases based on an new data set (data set not used throughout the course). The chosen data is imported directly from the web repository in a dedicated R script and refers to the quality of red and white "Vinho Verde", produced in Minho region, Portugal.
+
+# Overview
+
+Vinho Verde (green wine) refers to Portuguese wine produced in the historic Minho province in the far north of the country.
+Vinho Verde is not a grape variety but related to the region where the vines are located and the wine is released from 3 to 6 months after the grapes are harvested. The region where the wine is produced was demarcated in 1908.
+The wine can be red, white or rose and usually consumed soon after bottling. It is a light and fresh wine with alcohol content varying from 11.5 to 14%.
+
+More information about Vinho Verde can be found in English by following the link: [Vinho Verde information](https://en.wikipedia.org/wiki/Vinho_Verde)
+
+## Objective
+
+Predict wine quality based on the wine type (red / white) and the physicochemical characteristics
+
+## Method / Analysis
+
+The workflow will follow the typical Data Science process is the following sequence:
+
+![Data Science project workflow](C:/Users/guedeshe/Documents/R Projects/Module_9.2/DataScience.png)
+
+1. Importing
+  * Data is imported from the web repository and loaded in R environment to be processed
+2. Exploratory Data Analysis
+  * Clean ,Tidy and Transform (Wrangling)
+    * Data shall be stored in a consistent structure. This allows the efforts to be dedicated to the data analysis. Transformation in the data is often required to improve analysis
+  * Visualization
+    * Visualization helps the analysis to spot issues and trigger further questions towards the objective
+3. Modelling and Machine learning
+  * At least 2 models to predict quality the results will be developed
+
+Temporary files will be removed after usage to maintain the variables environment lean.
+
+
+# Exploratory Data Analysis (EDA) 
+
+## Data set overview
+
+There are two different data sets available, one for red wine and one for white wine, where physicochemical properties (predictors) are listed together with a quality assessment of the wine based on sensory analysis done by 3 experts (response).The listed response is the average of the expert assessment. The wines are classified from 0 (very bad) to 10 (excellent)
+
+
+It is observed that both data sets are complete (no Na's) however are not balanced in terms of wine type. The red wine data set has 1599 observations while the white wine data set has 4898.
+
+Both data sets have the same listed predictors making it easier to merge them in a bigger data set to include wine type as a predictor.
+
+### Red wine data set structure
+
+```{r}
+#load the data frame
+load("red_wine.RData")
+# Head of data set
+kable(head(red_wine),align="l", "html", booktabs=TRUE, caption = "Extract of red wine data set")%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+# Structure of the data set
+str(red_wine)
+# Number of NA's
+sum(is.na(red_wine))
+```
+
+### White wine data set structure
+
+```{r, echo=TRUE}
+# Load red wine data set
+load(file="white_wine.RData")
+
+# Head of data set
+kable(head(white_wine),align="l", "html", booktabs=TRUE, caption = "Extract of white wine data set")%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+# Structure of the data set
+str(white_wine)
+# Number of NA's
+sum(is.na(white_wine))
+```
+
+### Predictors Overview
+
+Both data sets will be joined for further data manipulation, transformation and visualization. For that a new variable called "wine_type" will be created in each data set. This data combination is done in a R script and loaded into the notebook.
+
+```{r combined_wines, echo=TRUE, fig.height=12, fig.width=12}
+
+load(file="wine.RData")
+
+# To visualize all the charts at one the data will be put in a long format
+
+wine%>%
+  pivot_longer(names_to = "variables",values_to="values", col=c(-quality,-wine_type))%>%
+  ggplot(aes(x= wine_type,y=values))+
+  geom_jitter(alpha=0.2)+
+  geom_boxplot(aes(fill= wine_type), alpha=0.8, outlier.colour = "red",outlier.size = 3, outlier.shape = 10)+
+  facet_wrap(~variables,scale="free")+
+  ggtitle("Combined data set")
+```
+
+The combined box-plots make evident that some of the predictors are not normally distributed with the presence of possible outliers are which imposes skweness to the distribution. The presence of outliers can be an issue for modelling. Depending on the chosen machine learning technique further data manipulation may be required.
+
+**Outliers won't be removed from the data set at this stage.**
+
+
+```{r , echo=TRUE, fig.height=12, fig.width=12}
+# To visualize all the charts at one the data will be put in a long format
+
+wine%>%
+  pivot_longer(names_to = "variables",values_to="values", col=c(-quality,-wine_type))%>%
+  ggplot(aes(x=values))+
+  geom_histogram(aes(fill=wine_type), bins=30, alpha=0.4)+
+  facet_wrap(~variables,scale="free")+
+  ggtitle("Combined data set")
+```
+
+The shape of the distribution for the predictors from red and white wines are similar in most of the cases
+
+```{r, echo=TRUE}
+#summary for combined data set
+summary(wine)
+# summary for the red wine
+summary(red_wine)
+#summary for the white wine
+summary(white_wine)
+```
+
+## Response Overview
+
+The behavior of the response variable , which in many cases can be considered as a process KPI, is important for the further steps. Depending on the choice of the model, some transformations also in the response variable may be required.
+
+```{r, echo= TRUE, message=FALSE,warning=FALSE, fig.width=12, fig.height=6}
+
+# Create a bar plot to visualize response by count
+a <-wine%>%
+  group_by(quality,wine_type)%>%
+  summarise(Count=n())%>%
+  ggplot(aes(x=quality,y=Count))+
+  geom_col(aes(fill=wine_type),position="dodge", alpha=0.4)+
+  ggtitle("Combined data set")
+
+total_red <- nrow(red_wine)
+total_white <- nrow(white_wine)
+
+# Create a summary with percentual by response and type
+wine_summary<- wine%>%
+  select(wine_type,quality)%>%
+  group_by(quality,wine_type)%>%
+  summarise(Count=n())%>%
+  pivot_wider(names_from = wine_type,values_from=Count)%>%
+  mutate(ratio_red =red_wine/total_red,
+         ratio_white=white_wine/total_white)%>%
+  select(quality,red_wine,ratio_red,white_wine,ratio_white)
+
+b<- wine_summary %>%
+  select(quality,ratio_red,ratio_white)%>%
+  pivot_longer(col=c(ratio_red,ratio_white), names_to="wine_type",
+               values_to="ratio")%>%
+  ggplot(aes(x=quality,y=ratio))+
+  geom_col(aes(fill=wine_type),position="dodge", alpha=0.4)+
+  ggtitle("Combined data set - Ratio per type")+
+  ylab("Ratio per wine type")
+
+# Plot results
+grid.arrange(a,b,ncol=2)
+
+# Print table
+kable(wine_summary,align="l", "html", booktabs=TRUE, caption = "Response Distribution by whine type")%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+
+# remove temporary files
+rm(a,b,wine_summary,total_red,total_white)
+```
+
+The bar plot indicates that white wines tends to be better graded than red wines, however this can be linked to the unbalanced distribution between wine types.
+
+No extreme grades are present in the data set (0,1,2 & 10).This imposes some restrictions to the models, which will have narrower boundaries (from class 3 to class 9). 
+
+It is also interesting to notice that the classes in the response variable are not balanced.
+
+```{r, echo=TRUE, fig.height=12, fig.width=14}
+
+wine%>%
+  pivot_longer(names_to = "variables",values_to="values", col=c(-quality,-wine_type))%>%
+  mutate(quality=factor(quality))%>%
+  ggplot(aes(y=values,x=wine_type))+
+  geom_jitter(alpha=0.3, aes(colour=wine_type))+
+  geom_boxplot(aes(fill=quality), outlier.colour = "red")+
+  facet_wrap(~variables,scale="free")+
+  ggtitle("Combined data set")
+
+```
+
+Analyzing the charts it is possible to spot some possible tendencies: 
+
+* Wines with higher alcoholic levels seem to be better classified for both types of wine 
+* Wines with lower density levels seem to be better classified (High correlation with alcohol levels) for both types of wines
+* Wines with lower chlorides levels seem to be better classified
+* red wines with higher levels of citric acid seem to be better correlated
+* red wines with higher levels of  sulfates seem to better correlated
+
+If the task was to determine the type of wine based on the chemical composition,the sulfur dioxide would play an important role
+
+```{r, fig.align='center'}
+wine%>%
+  mutate(quality=factor(quality))%>%
+  ggplot(aes(y=free.sulfur.dioxide,x=total.sulfur.dioxide))+
+  geom_jitter(alpha=0.1, aes(colour=wine_type))+
+  ggtitle("Combined data set")
+
+```
+
+
+## Correlation between predictors and response
+
+For this exercise, the response will be considered as numeric (not classification), just to give some indication where possible correlation may exist.
+
+### Linear Bi-Variate correlation :  Pearson
+
+```{r,echo=TRUE, fig.height=10,fig.width=12}
+#Remove non numeric data
+a<- wine%>%
+  select(-wine_type)
+
+#Calculate Correlation
+pearson_cor<- cor(a,use="everything", method="pearson")
+# Plot
+ggcorrplot(pearson_cor, type="full",
+           hc.method = "hclust",
+           hc.order=TRUE,
+           lab=TRUE,lab_size = 5,
+           insig="blank",
+           tl.cex = 12,tl.col="blue",tl.srt = 90,
+           colors = c("#E46726","white","#6D9EC1"))
+# Remove temporaty variables
+rm(a,pearson_cor)
+```
+
+The correlation plot indicates the presence of moderate co-linearity between alcohol and density and free and total sulfur dioxide.
+
+The quality grade does not show a strong linear correlation with any of the numeric predictors. Moderate correlation with alcohol.
+
+### Non-linear Bi-Variate correlation :  Spearman
+
+The spearman correlation is just used to understand if there will be any non-linear correlation between pair of variables.
+The results do not differ much from the linear correlation
+
+```{r,echo=TRUE, fig.height=10,fig.width=12}
+
+#Remove non numeric data
+a<- wine%>%
+  select(-wine_type)
+
+#Calculate Correlation
+spearman_cor<- cor(a,use="everything", method="spearman")
+# Plot
+ggcorrplot(spearman_cor, type="full",
+           hc.method = "hclust",
+           hc.order=TRUE,
+           lab=TRUE,lab_size = 5,
+           insig="blank",
+           tl.cex = 12,tl.col="blue",tl.srt = 90,
+           colors = c("#E46726","white","#6D9EC1"))
+# Remove temporaty variables
+rm(a,spearman_cor)
+
+```
+
+# Modelling approaches
+
+The response variable (quality) is an ordered integer from subjective measurement, therefore the problem fall into the classification range and classification models will be used to predict the result.
+
+For classification methods, some evaluations can be used: 
+
+* Misclassification
+  *  The overall error. Number of wrong classification divided by the total observations
+* Accuracy
+  * How often is the classifier correct 
+  * (TP + TN) / Total
+* Precision
+  * How accurate the classifier predict events
+  * Maximize True positives to False positives ratio 
+  *TP/(TP+FP)
+* Sensitivity
+  * How accurate the classifier classify actual events
+  * Ability of an algorithm to predict a positive outcome when the actual outcome is positive
+  * TP/(TP+FN)
+* Specificity
+  * How accurate the classifier classify non-events
+  *Ability of an algorithm to not predict a positive outcome when the actual outcome is not positive
+  * TN/(TN+FP)
+
+It is important to highlight that due to low prevalence it is possible to have high accuracy and low sensitivity, therefore a good balance between sensitivity and specificity shall be targeted as well, together with high accuracy (or low misclassification).
+
+## Training & Testing data
+
+The combined table (with red and white wine) will be used as the basis for modelling.
+
+The data will be split into training and testing data set in the proportion of 70/30 (70% of the data to training and 30% of the data to testing)
+
+![Training & Testing data sets](C:/Users/guedeshe/Documents/R Projects/Module_9.2/training_testing.png){width=35%}
+
+The models will be build on the training data set and validated with the unseen data represented by the testing data set.
+
+Due to the unbalanced data, the split will be done with sample stratification with wine quality as basis.
+
+![Two main splitting strategies](C:/Users/guedeshe/Documents/R Projects/Module_9.2/sampling.png){width=35%}
+
+
+```{r}
+# The response variable is integer. It will be transformed into factors
+wine_factor <- wine%>%
+  mutate(quality=factor(quality))
+levels(wine_factor$quality)
+
+# package used for stratified sampling = rsample
+# Stratification based on wine quality due to the unbalanced data
+set.seed(1234) # For reproducibility 
+data_split <- initial_split(wine_factor, prop=0.7, strata = quality)
+training_dt <- training(data_split)
+testing_dt <- testing(data_split)
+
+# Comparing training , testing and wine table for wine type
+a <- rbind(wine=prop.table(table(wine_factor$wine_type)),
+           training=prop.table(table(training_dt$wine_type)),
+           testing=prop.table(table(testing_dt$wine_type)))
+
+kable(a,align="c", "html", booktabs=TRUE, caption = "Data splitting stratification",digits = 2)%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+
+# Comparing training , testing and wine table for wine quality
+b<- rbind(wine=prop.table(table(wine_factor$quality)),
+           training=prop.table(table(training_dt$quality)),
+           testing=prop.table(table(testing_dt$quality)))
+
+kable(b,align="c", "html", booktabs=TRUE, caption = "Data splitting stratification",digits = 3)%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+
+#Temporary files are removed
+rm(a,b,data_split)
+```
+
+The stratification table shows a comparison of prevalence for the response variable. It is clear that the data set presents unbalanced distribution (e.g there is much more wines classified as quality 6, than quality 3)
+
+## Re-sampling
+
+Splitting the training data set into more parts can be used to improve the performance in the training data set
+
+The K-fold cross-validation (k-fold CV) is a re-sampling methods that randomly divides the training data into k groups of equal sizes. One of the groups is used than to compute the model performance. This process is repeated k times, resulting in k estimates of the error. The average of the k estimates  provides an approximation of the error we might expect on unseen data.
+
+As an alternative, a bootstrap sampling can also be used to estimate an approximation of the error in the training data set.
+
+# Models
+
+## Base Model
+
+The base model is the reference one which will be used as basis for comparison. In this case the models used as reference is the probability of the most common class in the training data set.
+
+```{r}
+# Create a probability table and round it to 3 digits
+a<- round(prop.table(table(training_dt$quality)),3)
+# Combine table with class lables
+b<- as_tibble(cbind(class=names(table(training_dt$quality)),distribution=a))
+# Print it nicely
+kable(b,align="c", "html", booktabs=TRUE, caption = "Training data set - Class distribution",digits = 2)%>%
+  kable_styling(bootstrap_options ="striped", full_width = FALSE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+
+## Define the Main Class
+max_i <- which.max(b$distribution)
+b[max_i,]
+```
+## Testing data set
+
+```{r}
+# Calculation the prediction using the model and the testing data set
+y_hat <- rep(b[max_i,1],nrow(testing_dt)) # Use main class response as the prediction for the testing data set
+#Confusion matrix, comparing the prediction and the real results
+cm <- confusionMatrix(factor(y_hat), testing_dt$quality) # y_hat needs to be converted to factor
+cm
+Accu_test_base <-cm$overall["Accuracy"]
+kappa_test_base <-cm$overall["Kappa"]
+#remove Temporary files
+rm(y_hat,cm,a,b,max_i)
+```
+
+## K nearest neighbors (Knn)
+
+The Knn algorithm identifies k observations that are similar or nearest  to the new record being predicted and than uses the average response value (regression) or the most common class (classification)
+
+The Knn method depends on the distance between the samples, the scale of the predictors can have influence on the distances among the samples, therefore the predictors shall be pre-processed in the model preparation (centralized and scaled).
+
+```{r}
+## The Knn model has the following parameters to fine tune
+getModelInfo("knn")[[2]]$parameters
+```
+
+```{r, echo=TRUE}
+# Resampling Strategy
+cv <- trainControl(
+  method="repeatedcv",
+  number=10,
+  repeats=5)
+# Grid to fine tune hyperparameter
+hyper_grid_knn<- expand.grid(k=seq(1,15,by=1))
+```
+
+```{r, echo=TRUE}
+# Tune the Knn model using the training data set
+knn_fit <- train(
+  quality~.,# quality is the response and all other parameters are predictors
+  data=training_dt,
+  method="knn",
+  preProcess=c("center","scale"),
+  trControl=cv,
+  tuneGrid=hyper_grid_knn)
+```
+
+```{r, echo=TRUE}
+# Plot the fine tuning
+ggplot(knn_fit,highlight = TRUE)
+# results for the optimal k
+knn_fit$bestTune
+knn_fit
+# best performing model
+knn_fit$finalModel
+```
+
+The best results if for k=1. This is an extreme case, because the prediction is based on a single observation that has the closest distance to measure and there is a risk to be over fitting the model.
+
+### Testing Data set
+
+The testing set performs better when the best fit results in the training set are applied achieving the best results for accuracy, balanced accuracy (therefore sensitivity and specificity) and Kappa value.
+
+```{r}
+# Calculation the prediction using the model and the testing data set
+y_hat <- predict(knn_fit,testing_dt,type="raw") 
+#Confusion matrix, comparing the prediction and the real results
+cm <- confusionMatrix(y_hat, testing_dt$quality)
+cm
+Accu_test_knn <-cm$overall["Accuracy"]
+kappa_test_Knn <-cm$overall["Kappa"]
+#remove Temporary files
+rm(y_hat)
+```
+
+```{r}
+# By class
+cm$byClass[,c(1:2,8)]
+# Remove temporary variables
+rm(cm)
+```
+
+
+### Results from Knn model
+
+The overall accuracy rate is not very impressive, but still the model is able to predict correctly more than 60% of data set.
+
+The no information rate is the best guess given no information beyond the overall distribution of the classes. 
+
+The overall accuracy is higher than the no information date, therefore the model is working better than a best guess.
+
+The Kappa ranges from 0 to 1 and measures the agreement between the model's prediction and the real one.
+The Kappa value is in the middle third (above 33% and below 66%) of the range, indicating that the model's agreement is moderate, most likely due to unbalanced classes.
+
+the summary for the Knn method follows:
+* Overall accuracy higher than no Information rate
+* Unbalanced multi class response
+
+## Classification Tree
+
+Tree-based models are a class of non-parametric algorithms that work by partitioning the predictors space into a number of smaller regions using a set of splitting rules. 
+The partitioning process for classification problems works towards homogeneity of the categories measured either by the entropy or the Gini index. In a perfect scenario, both indexes tend to zero.
+
+
+
+```{r}
+## The tree model has the following parameters to fine tune
+getModelInfo("rpart")[[5]]$parameters
+```
+
+
+The tree can  be stopped by setting the depth (number of levels the tree can grow) forcing an early stop.
+
+Alternatively to explicitly specifying the depth of a decision tree is to grow a very large tree and prune it back to find an optimal tree by using a cost complexity parameter. The complexity parameter (cp) measures how the indexes (Gini or entropy) shall improve for another partition to be added. Large values of cp will force the algorithm to stop earlier and have more nodes.
+
+the rpart package automatically applies a range of cp and performs 10-fold CV by default.
+
+A tentative to run the tree models with the default parameters for the rpart resulted in a accuracy lower than the Knn model.
+
+To try to improve the model the complexity parameter will be forces to zero and the tree will be pruned based on the defined cp
+
+```{r}
+# Set cp=0 and let the tree grow
+tree_fit<-rpart(formula=quality~.,
+                data=training_dt,
+                control =list(cp=0,xval=10))
+```
+
+
+
+```{r}
+# Plot cp to define the optimal size
+plotcp(tree_fit,col=2,upper="size")
+# print cp table for reference
+tree_fit$cptable
+# plot the a chart marking the chosen cp
+data.frame(tree_fit$cptable)%>%
+  ggplot(aes(x=CP,y=nsplit), highlight=TRUE)+
+  geom_point()+
+  geom_vline(xintercept = 0.0015, linetype="dashed",colour="red")
+```
+
+```{r}
+# Using the defined cp, recalculate the model
+tree_fit<-rpart(formula=quality~.,
+                data=training_dt,
+                cp=0.0015)
+```
+
+Due to the tree size the following plot is just illustrative
+
+```{r, fig.height=12,fig.width=15}
+rpart.plot(tree_fit,type=4,extra=100)
+```
+
+
+### Testing Data set
+
+```{r}
+# Calculation of the prediction using the model and the testing data set
+y_hat <- predict(tree_fit,testing_dt,type="class") 
+#Confusion matrix, comparing the prediction and the real results
+cm <- confusionMatrix(y_hat, testing_dt$quality)
+cm
+Accu_test_tree <-cm$overall["Accuracy"]
+kappa_test_tree <-cm$overall["Kappa"]
+# By class
+cm$byClass[,c(1:2,8)]
+# Remove temporary variables
+rm(cm,y_hat)
+```
+
+### Feature interpretation
+The alcohol level, as observed in the EDA, is the most important predictor for the final classification when using the single tree model
+
+
+```{r}
+vip(tree_fit, num_features = 12)
+# Plot all 12 features
+```
+
+
+### Results from Classification tree model
+
+Even allowing a deeper tree (cp=0.015, resulting in 65 nodes) the classification tree performed worse than the Knn algorithm
+
+## Bagging
+The bagging model create a defined number of bootstrap samples from the original training data using OOB re-sampling by default.
+Bagging aggregates the predictions across all trees, reducing the variance of the overall procedure improving the prediction performance.
+
+```{r}
+# Set the number of trees to fine tune
+ntree=c(10,25,50,100,150,200,250,300)
+
+# create empty vector to store OOB error values
+misclassification_error <- vector(mode = "numeric", length = length(ntree))
+
+for (i in seq_along(ntree) ){
+  # set seed
+set.seed(1234)
+  #train bagged model
+m <- bagging(formula=quality~.,
+                    data= training_dt,
+                    nbagg=ntree[i],
+                    coob=TRUE,
+                    control=rpart.control(minsplit=2,cp=0))# No prunning + requires just teo observations in a node to split
+misclassification_error[i] <-m$err
+}
+```
+
+```{r}
+# Make a table for the tree sizes
+a<- as_tibble(cbind(ntree,misclassification_error))
+#print the table
+kable(a,align="c", "html", booktabs=TRUE, caption = "Number of bagged trees fine tuning",digits = 3)%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+#plot the chart
+a%>%
+  ggplot(aes(y=misclassification_error,x=ntree))+
+  geom_line()+
+  geom_point(colour="blue")
+#Remove temporary files
+rm(a)
+```
+The results above 200 trees are marginal.
+
+```{r}
+wine_bag <- bagging(formula=quality~.,
+                    data=training_dt,
+                    nbagg=300,
+                    coob=TRUE,
+                    control=rpart.control(minsplit=2,cp=0)
+                    )
+```
+
+```{r}
+# print bagging results
+wine_bag
+```
+
+### Testing Data set
+
+```{r}
+# Calculation of the prediction using the model and the testing data set
+y_hat <- predict(wine_bag,
+                 testing_dt,
+                 type="class")
+#Confusion matrix, comparing the prediction and the real results
+cm <- confusionMatrix(data=y_hat,
+                      reference=testing_dt$quality)
+cm
+Accu_test_bag <-cm$overall["Accuracy"]
+kappa_test_bag <-cm$overall["Kappa"]
+# By class
+cm$byClass[,c(1:2,8)]
+# Remove temporary variables
+rm(cm,y_hat)
+```
+
+The bagged tree model improves quite considerably the results when compared to Knn and classification tree.
+
+### Feature interpretation
+
+The vip package cannot deal with ipred package. The model will be trained one more time in caret in order to identify the most important variables.
+
+
+```{r}
+# this code requires a lot of time to run, therefore the default number of numbers of trees (25) was used instead of the 300
+wine_bag_b <- train(quality~.,
+                    data=training_dt,
+                    method="treebag",
+                    #nbagg=300,
+                    control=rpart.control(minsplit = 2,cp=0))
+```
+
+```{r}
+wine_bag_b
+vip(wine_bag_b,num_features = 12)
+```
+
+
+With bagged trees, the importance of variables has changed quite considerably.
+
+
+## Random forests
+The random forest models will inject randomness  into the tree-growing process. During the bagging process, random forests perform a split-variable randomization to a limited  number of predictors (mtry)
+
+
+
+```{r}
+wine_rf <-randomForest(quality~.,data=training_dt,
+                       mtry=2,
+                       ntree=500)
+wine_rf
+```
+### Testing Data set
+
+```{r}
+# Calculation of the prediction using the model and the testing data set
+y_hat <- predict(wine_rf,
+                 testing_dt,
+                 type="class")
+#Confusion matrix, comparing the prediction and the real results
+cm <- confusionMatrix(data=y_hat,
+                      reference=testing_dt$quality)
+cm
+Accu_test_rf <-cm$overall["Accuracy"]
+kappa_test_rf<-cm$overall["Kappa"]
+# By class
+cm$byClass[,c(1:2,8)]
+# Remove temporary variables
+rm(cm,y_hat)
+```
+
+### Feature interpretation
+
+```{r}
+vip(wine_rf,num_features = 12)
+```
+
+
+# Results
+
+The comparison of the Overall accuracy for the tested classification models on the testing data set follows:
+
+```{r}
+
+#Building accuracy camparison table
+model_names <-c("Base","Knn","Classification_tree","Bagging","Random_Forest")
+
+## Overall Accuracy
+accuracy_values <-c(Accu_test_base,Accu_test_knn,Accu_test_tree,Accu_test_bag,Accu_test_rf)
+accuracy_values <- round(accuracy_values,3)
+
+## Kappa index
+kappa_values <-c(kappa_test_base,kappa_test_Knn,kappa_test_tree,kappa_test_bag,kappa_test_rf)
+kappa_values <- round(kappa_values,3)
+
+## Combine the tables
+accuracy_test_set <- as_tibble(cbind(model_names,accuracy_values,kappa_values))
+a<-accuracy_test_set %>%
+  mutate(accuracy_improvement = (as.numeric(accuracy_values)-as.numeric(Accu_test_base)))%>%
+  arrange(desc(accuracy_values))
+
+
+## print the table
+kable(a,align="l", "html", booktabs=TRUE, caption = "Comparison table - Models performance in the testing data set",digits = 3)%>%
+  kable_styling(bootstrap_options ="striped", full_width = TRUE, position = "center", fixed_thead = T, font_size = 10)%>%
+  row_spec(row=0,angle=0,color="steelblue", bold=T)
+
+#Removing temporary files
+rm(model_names,accuracy_values,accuracy_test_set,a)
+```
+
+Accuracy is not the only parameter to be observed. The problem presents a multi-class , unbalanced reponse variables therefore the balanced accuracy, which takes into consideration sensitivty and specificity is also observed for each indivual class.
+
+The random forest models improves all the parameters and shows a gain of 25% in accuracy when compared to the base model.
+
+The top 5 predictors for the the wine quality were in line with the EDA step
+
+1) Alcohol
+2) Density
+3) Volatile acidity
+4) Total sulfur
+5) Chlorides
+
+surprisingly , the type of wine (red or white) does not have important impact on the predictions, showing that the difference in the distribution can be related to the number of white and red wine analyzed.
+
+# Conclusion
+
+Although the best tested model promotes a considerable increment in the performance when compared to the baseline, the data set imposes some restrictions to the performance since not all classes from this multi-class problem are covered and the ones present in the data set are highly unbalanced. The models fail on correctly predict the extreme grades (Very bad and excellent) due to those restrictions. The boundaries of the models will be always between class 3 and class 9, tending to make better predictions to the middle classes.
+
+The excercise also makes evident the powder of aggregated predictions, with Bagging and random forests performing far better the the other tested models, at the cost of computational speed. Nevertheless the bagging algorithim resulted in a variable importance which is not aligned with the observations from the EDA step. The random forest algortithim form the other hands is pretty much aligned with the visualization, therefore should the the preferred one chosen, among all the tested models,  for the wine quality prediction.
+
+# Bibliography
+
+1. Rafael A. Irizarry (2019), Introduction to Data Science : Data Analysis and Prediction Algorithms with R, CRC Press 
+2. Gareth James,Daniela Witten, Trevor Hastie & Robert Tibshirani (2013), An introduction to statistical learning with applications in R, Springer
+3. Bradley Boehmke and Brandon Greenwell (2020), Hands-On machine learning with R, CRC Press
+4. Brett Lantz (2019), Machine learning with R : Expert techniques for predictive modellin, Packt
+5. Hadley Wickham (2016), ggplot2: Elegant Graphics for Data Analysis, Springer
